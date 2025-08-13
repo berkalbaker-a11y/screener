@@ -205,3 +205,18 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# Python
+.venv/
+__pycache__/
+out/
+
+# Node / UI
+ui/node_modules/
+ui/.next/
+ui/dist/
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
+
