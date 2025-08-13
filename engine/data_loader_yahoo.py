@@ -18,35 +18,51 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
 def fetch_ohlcv_yahoo(
     symbols: Iterable[str],
     *,
-    period: str = "60d",          # 60m barlar için tipik limit
+    period: str = "60d",          # 60m için tipik limit
     interval: str = "60m",        # 1 saatlik bar
     auto_adjust: bool = True,
     sector_map: Optional[Dict[str, str]] = None,
     suffix: str = ".IS",
+    fallback_daily: bool = True,  # <-- eklendi
 ) -> pd.DataFrame:
     """
-    Yahoo’dan çoklu sembol 1s OHLCV indir → MultiIndex (date, symbol)
+    Yahoo’dan çoklu sembol OHLCV indir → MultiIndex (date, symbol)
+    Önce 60m dener; boş dönerse 1d (günlük) ile tekrar dener.
     Dönüş: ['open','high','low','close','volume','sector']
     """
     ysyms = [to_yahoo_symbol(s, suffix=suffix) for s in symbols]
 
-    raw = yf.download(
-        ysyms,
-        period=period,
-        interval=interval,
-        group_by="ticker",
-        auto_adjust=auto_adjust,
-        threads=True,
-        progress=False,
-    )
-    if raw is None or raw.empty:
-        raise RuntimeError("Yahoo indirme sonucu boş. Sembol/period/interval'i kontrol et.")
+    def _download(_period, _interval):
+        return yf.download(
+            ysyms,
+            period=_period,
+            interval=_interval,
+            group_by="ticker",
+            auto_adjust=auto_adjust,
+            threads=True,
+            progress=False,
+        )
+
+    # 1) İlk deneme: 60m
+    raw = _download(period, interval)
+    used_interval = interval
+    used_period = period
+
+    # 2) Fallback: 1d (günlük)
+    if (raw is None or raw.empty) and fallback_daily and interval != "1d":
+        used_interval = "1d"
+        used_period = "365d"
+        raw = _download(used_period, used_interval)
+        if raw is None or raw.empty:
+            raise RuntimeError("Yahoo indirme sonucu boş. 60m ve 1d denemeleri başarısız.")
+
+    print(f"[yahoo] used interval={used_interval}, period={used_period}")
 
     frames = []
     if isinstance(raw.columns, pd.MultiIndex):
         for t in sorted(set(raw.columns.get_level_values(0))):
             sub = raw[t].dropna(how="all")
-            if sub.empty: 
+            if sub.empty:
                 continue
             sub = _normalize_ohlcv(sub)
             sub["symbol"] = t
@@ -67,6 +83,7 @@ def fetch_ohlcv_yahoo(
     all_df["date"] = pd.to_datetime(all_df["date"])
     all_df = all_df.set_index(["date","symbol"]).sort_index()
     return all_df
+
 
 def _convert_to_tz(idx: pd.DatetimeIndex, market_tz: str) -> pd.DatetimeIndex:
     # yfinance genelde UTC verir. TZ varsa convert, yoksa önce UTC'ye localize et, sonra convert.
