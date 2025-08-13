@@ -1,0 +1,23 @@
+name: Yahoo Loader Test
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'engine/**'
+      - '.github/workflows/loader.yml'
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r engine/requirements.txt
+      - name: Run loader
+        run: python -m engine.test_loader
+      - name: Upload CSV artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohlcv-csv
+          path: out/*.csv
